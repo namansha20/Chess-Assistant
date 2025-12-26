@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chess Coach</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>♟️ Chess Coach</h1>
+      <p class="subtitle">Your personal game review assistant</p>
+    </header>
+    
+    <div id="status" class="status">
+      <p>Waiting for game to finish...</p>
+    </div>
+    
+    <div id="analysis" class="analysis hidden">
+      <div class="game-info">
+        <h2>Game Summary</h2>
+        <div id="gameDetails"></div>
+      </div>
+      
+      <div class="coach-summary">
+        <h2>Coach's Analysis</h2>
+        <div id="coachSummary"></div>
+      </div>
+      
+      <div class="key-moments">
+        <h2>Key Moments</h2>
+        <div id="keyMoments"></div>
+      </div>
+      
+      <div class="patterns">
+        <h2>Recurring Patterns</h2>
+        <div id="patterns"></div>
+      </div>
+      
+      <div class="focus-areas">
+        <h2>Focus For Next Game</h2>
+        <div id="focusAreas"></div>
+      </div>
+    </div>
+    
+    <div id="history" class="history">
+      <button id="viewHistoryBtn" class="btn">View Game History</button>
+      <div id="historyList" class="hidden"></div>
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

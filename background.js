@@ -141,7 +141,7 @@ function analyzeMoves(moves, playerColor) {
   return analysis;
 }
 
-// Evaluate move quality (simplified heuristic-based analysis)
+// Evaluate move quality (heuristic-based analysis)
 function evaluateMoveQuality(move, index, allMoves) {
   const analysis = {
     type: 'good',
@@ -152,7 +152,7 @@ function evaluateMoveQuality(move, index, allMoves) {
   
   // Heuristic patterns for common mistakes
   
-  // Early queen development
+  // Early queen development (moves 1-6)
   if (index < 6 && move.startsWith('Q')) {
     analysis.type = 'mistake';
     analysis.reason = 'Developing the queen too early can make it a target for your opponent\'s pieces.';
@@ -160,11 +160,16 @@ function evaluateMoveQuality(move, index, allMoves) {
     return analysis;
   }
   
-  // Moving same piece twice in opening
+  // Moving same piece twice in opening (moves 1-10)
   if (index < 10) {
     const pieceType = move[0].match(/[NBRQK]/) ? move[0] : 'P';
-    const previousMoves = allMoves.slice(0, index).filter(m => m.move[0] === pieceType);
-    if (previousMoves.length > 1 && Math.random() > 0.7) {
+    const previousMoves = allMoves.slice(0, index).filter(m => {
+      const prevPieceType = m.move[0].match(/[NBRQK]/) ? m.move[0] : 'P';
+      return prevPieceType === pieceType;
+    });
+    
+    // If this piece moved more than once already
+    if (previousMoves.length > 1) {
       analysis.type = 'inaccuracy';
       analysis.reason = 'Moving the same piece multiple times in the opening wastes valuable development time.';
       analysis.suggestion = 'Try to develop each piece once before moving any piece twice. Get all your pieces into the game!';
@@ -172,9 +177,10 @@ function evaluateMoveQuality(move, index, allMoves) {
     }
   }
   
-  // Not castling early
-  if (index > 12 && index < 20 && !allMoves.slice(0, index).some(m => m.move === 'O-O' || m.move === 'O-O-O')) {
-    if (Math.random() > 0.6) {
+  // Not castling by move 15 (check moves 12-15)
+  if (index >= 12 && index < 20) {
+    const hasCastled = allMoves.slice(0, index).some(m => m.move === 'O-O' || m.move === 'O-O-O');
+    if (!hasCastled) {
       analysis.type = 'mistake';
       analysis.reason = 'Your king is still in the center and vulnerable to attacks.';
       analysis.suggestion = 'Castle early (usually within the first 10 moves) to get your king to safety and activate your rook.';
@@ -182,42 +188,58 @@ function evaluateMoveQuality(move, index, allMoves) {
     }
   }
   
-  // Pawn weaknesses (moving pawns without support)
-  if (move.match(/^[a-h][3-6]/) && Math.random() > 0.8) {
+  // Pawn weaknesses (advancing pawns too far early)
+  if (move.match(/^[a-h][4-6]/) && index < 15) {
     analysis.type = 'inaccuracy';
     analysis.reason = 'This pawn move might create weaknesses in your position.';
     analysis.suggestion = 'Be careful about advancing pawns without piece support. Every pawn move creates permanent changes.';
     return analysis;
   }
   
-  // Hanging pieces detection (simplified)
-  if (move.includes('x') && Math.random() > 0.7) {
-    // Capturing is generally good, but check if we're losing material
+  // Captures are generally good
+  if (move.includes('x')) {
     analysis.type = 'good';
     analysis.reason = 'Good capture! You\'re winning material or eliminating an important piece.';
     return analysis;
   }
   
-  // Check moves can be good or bad
+  // Checks - evaluate carefully
   if (move.includes('+')) {
-    if (Math.random() > 0.5) {
-      analysis.type = 'good';
-      analysis.reason = 'Nice check! You\'re putting pressure on your opponent and forcing them to respond.';
-    } else {
+    // Checks in early game without follow-up often waste time
+    if (index < 10) {
       analysis.type = 'inaccuracy';
       analysis.reason = 'This check doesn\'t lead to any concrete advantage. Avoid giving checks just for the sake of it.';
       analysis.suggestion = 'Look for checks that lead to winning material or improving your position, not just any check.';
+    } else {
+      analysis.type = 'good';
+      analysis.reason = 'Nice check! You\'re putting pressure on your opponent and forcing them to respond.';
     }
     return analysis;
   }
   
-  // Random blunders for demonstration
-  if (Math.random() > 0.92) {
-    analysis.type = 'blunder';
-    analysis.reason = 'This move hangs a piece! Your opponent can capture it for free.';
-    analysis.suggestion = 'Always check if your pieces are protected before moving. Ask: "Is this piece safe on this square?"';
-    analysis.fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+  // Checkmate is always excellent
+  if (move.includes('#')) {
+    analysis.type = 'good';
+    analysis.reason = 'Checkmate! Perfect execution.';
     return analysis;
+  }
+  
+  // Pattern: Early h-pawn or a-pawn moves (often weakening)
+  if ((move === 'h3' || move === 'h4' || move === 'a3' || move === 'a4') && index < 8) {
+    analysis.type = 'inaccuracy';
+    analysis.reason = 'Moving edge pawns early can weaken your king\'s position and waste time.';
+    analysis.suggestion = 'Focus on central pawns and piece development first. Edge pawns should usually wait.';
+    return analysis;
+  }
+  
+  // Pattern: Very late game moves (endgame)
+  if (index > 40) {
+    // In endgame, king activity is crucial
+    if (move.startsWith('K')) {
+      analysis.type = 'good';
+      analysis.reason = 'Good king activity in the endgame! The king becomes a strong piece.';
+      return analysis;
+    }
   }
   
   // Default good moves

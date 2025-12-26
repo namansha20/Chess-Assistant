@@ -217,7 +217,7 @@ function extractTimeControl() {
 // Extract game result
 function extractResult() {
   try {
-    // Look for result in game over modal
+    // Method 1: Look for result in game over modal header
     const gameOverHeader = document.querySelector('.game-over-header-component, .game-over-title');
     if (gameOverHeader) {
       const text = gameOverHeader.textContent.toLowerCase();
@@ -230,17 +230,31 @@ function extractResult() {
       }
     }
     
-    // Check for checkmate/resignation indicators
+    // Method 2: Check for checkmate/resignation indicators in content
     const resultText = document.querySelector('.game-over-modal-content');
     if (resultText) {
       const text = resultText.textContent.toLowerCase();
       if (text.includes('checkmate') || text.includes('resigned')) {
-        // Determine if win or loss
         if (text.includes('you won') || text.includes('victory')) {
           return 'win';
         } else {
           return 'loss';
         }
+      }
+    }
+    
+    // Method 3: Check various other result indicators
+    const resultElements = document.querySelectorAll('[class*="result"], [class*="game-over"]');
+    for (const elem of resultElements) {
+      const text = elem.textContent.toLowerCase();
+      if (text.includes('you won') || text.includes('victory') || text.includes('checkmate')) {
+        if (!text.includes('lost')) return 'win';
+      }
+      if (text.includes('you lost') || text.includes('defeat')) {
+        return 'loss';
+      }
+      if (text.includes('draw') || text.includes('tie')) {
+        return 'draw';
       }
     }
   } catch (e) {
@@ -279,6 +293,12 @@ function constructFENFromBoard() {
       if (squareMatch) {
         const file = parseInt(squareMatch[1]) - 1;
         const rank = parseInt(squareMatch[2]) - 1;
+        
+        // Validate indices are within bounds
+        if (file < 0 || file > 7 || rank < 0 || rank > 7) {
+          console.warn('Chess Coach: Invalid board coordinates', file, rank);
+          return;
+        }
         
         // Extract piece type and color
         const pieceMatch = classes.match(/(w|b)(p|n|b|r|q|k)/i);

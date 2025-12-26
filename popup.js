@@ -80,8 +80,16 @@ function displayAnalysis(analysis) {
   // Display focus areas
   displayFocusAreas(analysis.focusAreas);
   
-  // Clear badge
-  chrome.action.setBadgeText({ text: '' });
+  // Clear badge with error handling
+  try {
+    chrome.action.setBadgeText({ text: '' }, () => {
+      if (chrome.runtime.lastError) {
+        console.warn('Could not clear badge:', chrome.runtime.lastError.message);
+      }
+    });
+  } catch (error) {
+    console.warn('Badge API error:', error);
+  }
 }
 
 // Display game details

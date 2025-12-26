@@ -1,0 +1,1046 @@
+# Chess.com Game Review Assistant - Complete Documentation
+
+## TABLE OF CONTENTS
+1. Overview
+2. Technical Architecture
+3. How the Code Works
+4. Installation & Running
+5. Publishing to Microsoft Edge Add-ons
+6. Publishing to Chrome Web Store
+7. Troubleshooting
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## 1. OVERVIEW
+
+Chess.com Game Review Assistant is a Chrome/Edge browser extension (Manifest V3) 
+that automatically analyzes your Chess.com games and provides human-friendly 
+coaching feedback.
+
+### Key Features
+- Automatic game detection on Chess.com
+- Extracts PGN, player color, time control, and result
+- Human coach-style analysis (no engine jargon)
+- Pattern detection across multiple games
+- Actionable improvement suggestions
+- Game history tracking (50 games)
+- Privacy-focused (all processing local)
+
+### Technical Stack
+- Manifest V3 (modern Chrome extension standard)
+- Vanilla JavaScript (no frameworks)
+- Chrome Storage API
+- MutationObserver for DOM monitoring
+- Heuristic-based chess analysis
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## 2. TECHNICAL ARCHITECTURE
+
+### File Structure
+```
+Chess-Assistant/
+├── manifest.json          # Extension configuration (Manifest V3)
+├── content.js            # Runs on Chess.com pages (game detection)
+├── background.js         # Service worker (analysis engine)
+├── popup.html           # Extension popup UI structure
+├── popup.js             # Popup logic and display
+├── popup.css            # UI styling
+├── icons/               # Extension icons (16px, 48px, 128px)
+├── README.md            # Main documentation
+├── INSTALL.md           # Installation guide
+├── QUICKSTART.md        # 5-minute setup
+├── FEATURES.md          # Detailed features
+├── TESTING.md           # Testing guide
+├── CHANGELOG.md         # Version history
+├── PROJECT_SUMMARY.md   # Project overview
+├── package.json         # Validation scripts
+└── .gitignore          # Git exclusions
+```
+
+### Architecture Diagram
+```
+┌──────────────────────────────────────────────────────────────┐
+│                      Chess.com Website                       │
+└──────────────────────────────────────────────────────────────┘
+                           │
+                           │ DOM Events
+                           ↓
+┌──────────────────────────────────────────────────────────────┐
+│                     content.js (Content Script)              │
+│  • Monitors page with MutationObserver                       │
+│  • Detects game-over modal                                   │
+│  • Extracts: PGN, color, time control, result                │
+│  • Constructs FEN positions                                  │
+└──────────────────────────────────────────────────────────────┘
+                           │
+                           │ chrome.runtime.sendMessage()
+                           ↓
+┌──────────────────────────────────────────────────────────────┐
+│              background.js (Service Worker)                  │
+│  • Receives game data                                        │
+│  • Analyzes moves (heuristic-based)                          │
+│  • Detects patterns across games                             │
+│  • Generates coach summary                                   │
+│  • Stores in Chrome Storage                                  │
+└──────────────────────────────────────────────────────────────┘
+                           │
+                           │ chrome.storage.local
+                           ↓
+┌──────────────────────────────────────────────────────────────┐
+│                    Chrome Storage API                        │
+│  • Stores game history (max 50)                             │
+│  • Stores latest analysis                                    │
+│  • Persists patterns data                                    │
+└──────────────────────────────────────────────────────────────┘
+                           │
+                           │ chrome.runtime.sendMessage()
+                           ↓
+┌──────────────────────────────────────────────────────────────┐
+│              popup.html/js/css (Extension UI)                │
+│  • Displays analysis results                                 │
+│  • Shows game history                                        │
+│  • Interactive UI with 5 sections                            │
+└──────────────────────────────────────────────────────────────┘
+```
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## 3. HOW THE CODE WORKS
+
+### 3.1 Game Detection (content.js)
+
+**Entry Point:**
+```javascript
+// Initialize when page loads
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initialize);
+} else {
+  initialize();
+}
+```
+
+**Detection Flow:**
+1. Check if current page is a Chess.com game page
+2. Setup MutationObserver to watch for DOM changes
+3. Periodically check for game-over indicators every 3 seconds
+4. When game ends, extract all game data
+5. Send to background script for analysis
+
+**Key Functions:**
+
+`checkGameEnd()` - Detects game completion
+```javascript
+// Looks for game-over modal elements
+const gameOverElement = document.querySelector('.game-over-modal-content') ||
+                       document.querySelector('[data-cy="game-over-modal"]');
+```
+
+`extractPGN()` - Extracts moves in PGN format
+```javascript
+// Method 1: Try Chess.com's internal API
+// Method 2: Build from move list DOM elements
+// Method 3: Try download button
+```
+
+`extractPlayerColor()` - Determines if you're White or Black
+```javascript
+// Check which side has current user's name
+// Fallback: Check board orientation (flipped = black)
+```
+
+`extractResult()` - Gets win/loss/draw
+```javascript
+// Method 1: Check game-over modal header
+// Method 2: Look for checkmate/resignation text
+// Method 3: Search various result indicators
+```
+
+`constructFENFromBoard()` - Creates FEN notation
+```javascript
+// Parse piece positions from DOM
+// Build FEN string with bounds checking
+// Return standard FEN notation
+```
+
+### 3.2 Analysis Engine (background.js)
+
+**Message Listener:**
+```javascript
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.type === 'GAME_ENDED') {
+    handleGameEnd(request.data)
+      .then(analysis => sendResponse({ success: true, analysis }))
+      .catch(error => sendResponse({ success: false, error }));
+    return true; // Keep channel open
+  }
+});
+```
+
+**Analysis Pipeline:**
+```
+Game Data → Parse PGN → Analyze Moves → Identify Key Moments 
+          → Detect Patterns → Generate Summary → Store Results
+```
+
+**Move Evaluation Logic:**
+
+The extension uses heuristic patterns to evaluate moves:
+
+1. **Early Queen Development** (moves 1-6)
+   - If queen moves early → Mark as MISTAKE
+   - Reason: "Makes queen a target"
+
+2. **Moving Same Piece Twice** (moves 1-10)
+   - If same piece moves multiple times → INACCURACY
+   - Reason: "Wastes development time"
+
+3. **Not Castling** (by move 15)
+   - If king still in center → MISTAKE
+   - Reason: "King vulnerable to attacks"
+
+4. **Pawn Weaknesses** (early pawn advances)
+   - If pawns advance without support → INACCURACY
+   - Reason: "Creates weaknesses"
+
+5. **Captures**
+   - Generally marked as GOOD
+   - Reason: "Winning material"
+
+6. **Checks**
+   - Early checks without follow-up → INACCURACY
+   - Tactical checks → GOOD
+
+**Pattern Detection:**
+```javascript
+// Tracks issues across games:
+- Early queen development (count occurrences)
+- Delayed castling (count occurrences)
+- Hanging pieces (count blunders)
+
+// Stores in game history
+// Displays when pattern appears 2+ times
+```
+
+**Coach Summary Generation:**
+```javascript
+// Opening assessment (moves 1-10)
+if (openingMistakes === 0) → "Solid opening"
+else if (openingMistakes <= 2) → "Decent with room for improvement"
+else → "Opening needs work"
+
+// Middlegame assessment (moves 11-30)
+if (middlegameErrors === 0) → "Excellent middlegame"
+else if (middlegameErrors <= 2) → "Good with occasional oversights"
+else → "Middlegame was challenging"
+
+// Overall based on result
+if (win) → "Congratulations! Keep building on what worked"
+if (loss) → "Learn from mistakes, focus on patterns"
+if (draw) → "Fair draw! Keep reducing mistakes"
+```
+
+### 3.3 Storage Management
+
+**Data Structure:**
+```javascript
+// Chrome Storage Local
+{
+  games: [
+    {
+      pgn: "1. e4 e5 2. Nf3...",
+      playerColor: "white",
+      timeControl: "10+0",
+      result: "win",
+      timestamp: 1703552400000,
+      url: "https://chess.com/game/live/...",
+      analysis: {
+        moveAnalysis: [...],
+        keyMoments: [...],
+        patterns: [...],
+        summary: {...},
+        focusAreas: [...]
+      }
+    },
+    // ... up to 50 games
+  ],
+  latestAnalysis: { /* most recent */ }
+}
+```
+
+**Storage Operations:**
+```javascript
+// Store new game
+chrome.storage.local.set({ games, latestAnalysis })
+
+// Retrieve games
+chrome.storage.local.get(['games', 'latestAnalysis'])
+
+// Automatic cleanup (keep only 50 most recent)
+const trimmedGames = games.slice(0, 50)
+```
+
+### 3.4 UI Display (popup.js)
+
+**Initialization:**
+```javascript
+document.addEventListener('DOMContentLoaded', async () => {
+  setupEventListeners();
+  await loadLatestAnalysis();
+  await loadGameHistory();
+});
+```
+
+**Display Sections:**
+
+1. **Game Summary**
+   - Color, time control, result, date
+   - Color-coded result (green=win, red=loss, gray=draw)
+
+2. **Coach's Analysis**
+   - Opening assessment
+   - Middlegame evaluation
+   - Overall feedback
+   - Strengths list
+   - Weaknesses list
+
+3. **Key Moments**
+   - Critical moves with explanations
+   - FEN positions
+   - Better move suggestions
+   - Color-coded by severity
+
+4. **Recurring Patterns**
+   - Pattern name with occurrence count
+   - Description of the issue
+   - Specific fix advice
+
+5. **Focus Areas**
+   - Top 3 prioritized improvements
+   - Numbered list with actionable steps
+
+**History Viewer:**
+```javascript
+// Click "View History" button
+toggleHistory() → displayHistory()
+
+// Shows last 10 games
+// Click any game → loadHistoricalGame()
+// Displays that game's full analysis
+```
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## 4. INSTALLATION & RUNNING
+
+### 4.1 Prerequisites
+- Google Chrome (v88+) or Microsoft Edge (Chromium-based)
+- Chess.com account (for testing)
+
+### 4.2 Local Development Installation
+
+**Step 1: Get the Code**
+```bash
+# Clone the repository
+git clone https://github.com/namansha20/Chess-Assistant.git
+cd Chess-Assistant
+
+# Or download as ZIP and extract
+```
+
+**Step 2: Load in Chrome/Edge**
+
+**For Chrome:**
+1. Open Chrome browser
+2. Navigate to: `chrome://extensions/`
+3. Enable "Developer mode" (toggle in top-right corner)
+4. Click "Load unpacked" button
+5. Navigate to and select the `Chess-Assistant` folder
+6. Extension should appear in the list as "Enabled"
+
+**For Microsoft Edge:**
+1. Open Edge browser
+2. Navigate to: `edge://extensions/`
+3. Enable "Developer mode" (toggle in left sidebar)
+4. Click "Load unpacked" button
+5. Navigate to and select the `Chess-Assistant` folder
+6. Extension should appear in the list as "Enabled"
+
+**Step 3: Verify Installation**
+- Look for the Chess Coach icon (♟️) in your browser toolbar
+- If not visible, click the puzzle piece icon and pin the extension
+- Extension status should show "Enabled"
+
+**Step 4: Grant Permissions**
+- Extension will request permission to access Chess.com
+- Click "Allow" when prompted
+
+### 4.3 Testing the Extension
+
+**Quick Test:**
+1. Go to Chess.com
+2. Play a game (or use "Play Computer" for quick testing)
+3. Complete the game (win, lose, or resign)
+4. Wait for notification: "♟️ Game analysis ready!"
+5. Click the extension icon in toolbar
+6. View your personalized analysis
+
+**Console Debugging:**
+- Open DevTools (F12) → Console tab
+- Look for: "Chess Coach: Content script loaded"
+- After game ends: "Chess Coach: Game over detected!"
+
+### 4.4 Validation Scripts
+
+```bash
+# Install npm (if not already installed)
+npm install
+
+# Run validation tests
+npm test
+
+# This runs:
+# - JavaScript syntax validation (node -c)
+# - JSON structure validation (manifest.json)
+```
+
+### 4.5 File Permissions
+
+Ensure all files have read permissions:
+```bash
+# Linux/Mac
+chmod 644 *.js *.json *.html *.css *.md
+chmod 644 icons/*
+
+# Windows: No action needed (default permissions work)
+```
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## 5. PUBLISHING TO MICROSOFT EDGE ADD-ONS
+
+### 5.1 Prerequisites
+- Microsoft Partner Center account
+- Extension tested and working
+- All documentation ready
+- Screenshots prepared
+
+### 5.2 Prepare Extension Package
+
+**Step 1: Create Distribution Package**
+```bash
+# Navigate to extension directory
+cd Chess-Assistant
+
+# Create ZIP file (exclude development files)
+# Linux/Mac:
+zip -r chess-assistant-v1.0.0.zip . \
+  -x "*.git*" \
+  -x "node_modules/*" \
+  -x "*.md" \
+  -x "package.json" \
+  -x "*.txt"
+
+# Windows (PowerShell):
+Compress-Archive -Path * -DestinationPath chess-assistant-v1.0.0.zip `
+  -Exclude .git*,node_modules,*.md,package.json,*.txt
+
+# ZIP should contain:
+# - manifest.json
+# - content.js
+# - background.js
+# - popup.html, popup.js, popup.css
+# - icons/ folder
+```
+
+**Important Files to Include:**
+- ✅ manifest.json
+- ✅ All .js files (content.js, background.js, popup.js)
+- ✅ All .html files (popup.html)
+- ✅ All .css files (popup.css)
+- ✅ icons/ folder with all PNG files
+
+**Files to Exclude:**
+- ❌ .git/ folder
+- ❌ .gitignore
+- ❌ node_modules/
+- ❌ *.md documentation files
+- ❌ package.json
+- ❌ TESTING.md, INSTALL.md, etc.
+
+### 5.3 Register Microsoft Partner Center Account
+
+1. Go to: https://partner.microsoft.com/dashboard
+2. Click "Sign Up" or "Sign In"
+3. Create a Microsoft account (if you don't have one)
+4. Complete account verification
+5. Accept Partner Agreement
+
+**Cost:** FREE (no registration fee for Edge Add-ons)
+
+### 5.4 Submit Extension to Edge Add-ons
+
+**Step 1: Access Partner Center**
+1. Sign in to: https://partner.microsoft.com/dashboard/microsoftedge
+2. Click "Create new extension"
+
+**Step 2: Fill Extension Details**
+
+**Package Tab:**
+- Upload: `chess-assistant-v1.0.0.zip`
+- System will validate package
+- Fix any errors shown
+
+**Properties Tab:**
+```
+Display Name: Chess.com Game Review Assistant
+Category: Productivity
+Subcategory: Tools
+Language: English (United States)
+```
+
+**Listing Tab:**
+
+**Store Listing Description:**
+```
+Transform your chess game with an AI coach that speaks your language! 
+
+Chess.com Game Review Assistant automatically analyzes your completed 
+games and provides human-friendly coaching feedback—no confusing engine 
+notation, just clear advice you can actually use.
+
+FEATURES:
+• Automatic game detection on Chess.com
+• Human coach-style analysis (no engine jargon!)
+• Identifies mistakes, blunders, and missed tactics
+• Tracks recurring patterns across your games
+• Shows key positions where games were decided
+• Actionable improvement suggestions
+• Game history tracking
+• 100% private - all processing happens locally
+
+PERFECT FOR:
+• Players who want to improve but find engine analysis confusing
+• Anyone looking to break bad habits and fix recurring mistakes
+• Chess enthusiasts who prefer plain English explanations
+• Players of all levels from beginner to advanced
+
+HOW IT WORKS:
+1. Play a game on Chess.com
+2. Extension automatically detects when game ends
+3. Click the extension icon to view your personalized analysis
+4. Focus on the top 3 improvement areas
+5. Track patterns across multiple games
+
+NO SUBSCRIPTION REQUIRED. Privacy-focused design—no data leaves your 
+browser.
+
+Start improving your chess today!
+```
+
+**Short Description (132 chars max):**
+```
+AI chess coach for Chess.com. Get human-friendly game analysis with 
+pattern detection and actionable improvement advice.
+```
+
+**Screenshots:**
+Prepare 5 screenshots (1280x800 or 640x400):
+1. Main analysis view showing coach summary
+2. Key moments section with blunder explanations
+3. Recurring patterns detection
+4. Focus areas with improvement suggestions
+5. Game history viewer
+
+**Store Logo:**
+- Use: icons/icon128.png
+- Requirements: 128x128 PNG
+
+**Promotional Tiles (Optional):**
+- Small: 440x280
+- Large: 1400x560
+- Create promotional graphics showing extension in use
+
+**Privacy Policy Tab:**
+```
+Privacy Policy for Chess.com Game Review Assistant
+
+Data Collection:
+This extension does NOT collect, store, or transmit any personal 
+data to external servers. All game analysis happens locally in your 
+browser.
+
+Local Storage:
+The extension stores game analysis results in your browser's local 
+storage (Chrome Storage API). This data includes:
+- Game moves (PGN notation)
+- Analysis results
+- Pattern tracking data
+
+This data:
+- Never leaves your device
+- Can be cleared at any time by uninstalling the extension
+- Is not accessible to the extension developers
+
+Third-Party Services:
+The extension accesses Chess.com only to detect game completion 
+and extract publicly visible game data from your own games.
+
+No third-party analytics or tracking services are used.
+
+Contact:
+For privacy concerns, open an issue at:
+https://github.com/namansha20/Chess-Assistant/issues
+
+Last Updated: December 26, 2025
+```
+
+**Support URL:**
+```
+https://github.com/namansha20/Chess-Assistant
+```
+
+### 5.5 Certification & Review
+
+**Step 3: Submit for Review**
+1. Click "Submit for certification"
+2. Review all information
+3. Confirm submission
+
+**Review Process:**
+- Typical review time: 3-7 business days
+- Microsoft reviews for:
+  - Security issues
+  - Policy compliance
+  - Functionality
+  - Metadata accuracy
+
+**Status Tracking:**
+- Check Partner Center dashboard for status updates
+- Possible statuses:
+  - "In review" - Being evaluated
+  - "In certification" - Technical testing
+  - "Published" - Live on store!
+  - "Failed" - Issues found (see feedback)
+
+**If Certification Fails:**
+1. Read feedback carefully
+2. Fix all issues mentioned
+3. Update version number in manifest.json (e.g., 1.0.0 → 1.0.1)
+4. Create new ZIP package
+5. Re-submit
+
+### 5.6 After Publication
+
+**Store URL:**
+Your extension will be available at:
+```
+https://microsoftedge.microsoft.com/addons/detail/[your-extension-id]
+```
+
+**Updates:**
+To publish updates:
+1. Increment version in manifest.json (1.0.0 → 1.0.1)
+2. Create new ZIP package
+3. Go to Partner Center → Your Extension
+4. Click "Update" or "New submission"
+5. Upload new package
+6. Submit for review
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## 6. PUBLISHING TO CHROME WEB STORE
+
+### 6.1 Prerequisites
+- Google Developer account ($5 one-time fee)
+- Extension tested and working
+- All documentation ready
+- Screenshots prepared
+
+### 6.2 Prepare Extension Package
+
+**Create ZIP file** (same as Edge Add-ons section 5.2)
+```bash
+cd Chess-Assistant
+zip -r chess-assistant-v1.0.0.zip . \
+  -x "*.git*" -x "node_modules/*" -x "*.md" -x "package.json"
+```
+
+### 6.3 Create Chrome Web Store Developer Account
+
+1. Go to: https://chrome.google.com/webstore/devconsole
+2. Sign in with Google account
+3. Click "Sign up"
+4. Pay $5 one-time registration fee
+5. Accept Developer Agreement
+
+**Important:** This is a ONE-TIME fee, not annual.
+
+### 6.4 Submit Extension to Chrome Web Store
+
+**Step 1: Access Developer Dashboard**
+1. Go to: https://chrome.google.com/webstore/devconsole
+2. Click "New Item"
+
+**Step 2: Upload Package**
+1. Click "Choose file" or drag ZIP
+2. Upload: `chess-assistant-v1.0.0.zip`
+3. Click "Upload"
+4. System validates package
+5. Fix any errors shown
+
+**Step 3: Fill Store Listing**
+
+**Product Details:**
+```
+Item Name: Chess.com Game Review Assistant
+
+Summary (132 characters):
+AI chess coach for Chess.com. Get human-friendly game analysis with 
+pattern detection and actionable advice.
+```
+
+**Description (same as Edge, max 16,000 chars):**
+```
+Transform your chess game with an AI coach that speaks your language!
+
+Chess.com Game Review Assistant automatically analyzes your completed 
+games and provides human-friendly coaching feedback—no confusing 
+engine notation, just clear advice you can actually use.
+
+✨ FEATURES
+• Automatic game detection on Chess.com
+• Human coach-style analysis (no engine jargon!)
+• Identifies mistakes, blunders, and missed tactics
+• Tracks recurring patterns across your games
+• Shows key positions where games were decided
+• Provides actionable improvement suggestions
+• Game history tracking (up to 50 games)
+• 100% private - all processing happens locally
+
+🎯 PERFECT FOR
+• Players who want to improve but find engine analysis confusing
+• Anyone looking to break bad habits and fix recurring mistakes
+• Chess enthusiasts who prefer plain English explanations
+• Players of all levels from beginner to advanced
+
+🔧 HOW IT WORKS
+1. Play a game on Chess.com
+2. Extension automatically detects when game ends
+3. Click the extension icon to view your personalized analysis
+4. Review key moments, patterns, and focus areas
+5. Apply advice in your next game
+
+📊 WHAT YOU GET
+• Opening Assessment - Did you follow basic principles?
+• Middlegame Evaluation - Tactical awareness check
+• Key Moments - Critical positions with explanations
+• Recurring Patterns - Habits detected across games
+• Focus Areas - Top 3 priorities for improvement
+
+🔒 PRIVACY FIRST
+• No account required
+• No data sent to external servers
+• All analysis happens in your browser
+• No tracking or analytics
+• Open source code
+
+🎓 EXAMPLE ANALYSIS
+"Opening: Your opening was solid! You developed pieces logically.
+
+Key Moment - Move 12: This move hangs a piece! Always check if 
+your pieces are protected.
+
+Pattern Detected (3 games): Early Queen Development
+Fix: Develop knights and bishops first, queen comes later.
+
+Focus Area #1: Eliminate one-move blunders by taking 5 seconds 
+before each move to scan for hanging pieces."
+
+🚀 START IMPROVING TODAY
+No subscription. No complicated setup. Just install and play!
+
+For questions or feedback:
+GitHub: https://github.com/namansha20/Chess-Assistant
+```
+
+**Category:**
+```
+Primary: Productivity
+```
+
+**Language:**
+```
+English (United States)
+```
+
+**Icon:**
+- Upload: icons/icon128.png
+- Requirements: 128x128 PNG
+
+**Screenshots:**
+Upload 5 screenshots (1280x800 or 640x400):
+1. Main popup showing complete analysis
+2. Key moments section with detailed explanations
+3. Recurring patterns with occurrence counts
+4. Focus areas with numbered priorities
+5. Game history viewer
+
+**Promotional Images (Optional but Recommended):**
+- Small tile: 440x280 PNG
+- Marquee: 1400x560 PNG
+- Screenshot: 1280x800 or 640x400 PNG
+
+**Video (Optional):**
+- YouTube link showing extension in action
+- Recommended: 1-2 minute demo
+
+### 6.5 Privacy & Distribution
+
+**Privacy Practices:**
+Click "Add privacy practices"
+
+```
+Privacy Policy:
+https://github.com/namansha20/Chess-Assistant/blob/main/PRIVACY.md
+(Create this file if it doesn't exist)
+
+Data Usage:
+☑ This extension does NOT collect user data
+
+Permissions Justification:
+• storage - To save game analysis locally
+• activeTab - To detect games on Chess.com
+• scripting - To analyze game data
+• host: chess.com/* - To access game information
+
+Are you using or do you plan to use any of the following?
+☐ Remote code
+☐ Third-party analytics
+☐ Cookies
+☐ Authentication
+☑ None of the above
+```
+
+**Distribution:**
+```
+Visibility: Public
+Regions: All regions
+```
+
+### 6.6 Submit for Review
+
+**Step 4: Review & Submit**
+1. Click "Save draft"
+2. Review all information
+3. Click "Submit for review"
+
+**Review Process:**
+- Typical review time: 1-3 business days (can be up to 7 days)
+- Google reviews for:
+  - Manifest V3 compliance
+  - Security issues
+  - Policy violations
+  - Functionality
+  - Metadata accuracy
+
+**Status Tracking:**
+Check dashboard for status:
+- "Pending" - Awaiting review
+- "In Review" - Being evaluated
+- "Published" - Live on store! 🎉
+- "Rejected" - Issues found (see email)
+
+**Common Rejection Reasons:**
+1. **Permissions justification needed**
+   - Solution: Explain why each permission is necessary
+
+2. **Privacy policy required**
+   - Solution: Add detailed privacy policy URL
+
+3. **Misleading description**
+   - Solution: Be accurate, don't overpromise
+
+4. **Icon quality issues**
+   - Solution: Use high-quality 128x128 PNG
+
+5. **Single-purpose policy**
+   - Solution: Extension should do one thing well
+
+### 6.7 After Publication
+
+**Store URL:**
+Your extension will be at:
+```
+https://chrome.google.com/webstore/detail/[extension-name]/[extension-id]
+```
+
+**Share Your Extension:**
+```
+https://chromewebstore.google.com/detail/chess-assistant/[your-id]
+```
+
+**Updates:**
+To publish updates:
+1. Increment version in manifest.json (1.0.0 → 1.0.1)
+2. Create new ZIP package
+3. Go to Developer Dashboard → Your Item
+4. Click "Upload Updated Package"
+5. Upload new ZIP
+6. Update store listing if needed
+7. Click "Submit for review"
+
+**Important:** Each update goes through review process.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## 7. TROUBLESHOOTING
+
+### 7.1 Common Installation Issues
+
+**Issue: Extension doesn't load**
+Solution:
+- Check all files are present
+- Verify manifest.json is valid JSON
+- Check console for errors (F12)
+- Try reloading extension
+
+**Issue: Icon not showing**
+Solution:
+- Pin extension (click puzzle piece icon)
+- Check icon files exist in icons/ folder
+- Verify icon paths in manifest.json
+
+**Issue: No game detection**
+Solution:
+- Open Chess.com
+- Check console: "Chess Coach: Content script loaded"
+- Ensure you're on a game page
+- Refresh page if needed
+
+### 7.2 Development Issues
+
+**Issue: Code changes not reflecting**
+Solution:
+- Click "Reload" in chrome://extensions/
+- Or remove and re-add extension
+- Clear browser cache (Ctrl+Shift+Delete)
+
+**Issue: Permission errors**
+Solution:
+- Check manifest.json permissions
+- Ensure host_permissions includes chess.com
+- Re-install extension after changes
+
+### 7.3 Store Submission Issues
+
+**Issue: ZIP file too large**
+Solution:
+- Exclude documentation (.md files)
+- Exclude development files (package.json)
+- Exclude .git folder
+- Should be under 10MB
+
+**Issue: Manifest validation errors**
+Solution:
+- Validate JSON syntax
+- Check Manifest V3 compliance
+- Ensure all required fields present
+- Use: npm run validate
+
+**Issue: Privacy policy required**
+Solution:
+- Add privacy policy to description
+- Host policy on GitHub
+- Include in manifest.json if needed
+
+### 7.4 Post-Publication Issues
+
+**Issue: Extension not appearing in search**
+Solution:
+- Wait 24-48 hours after publication
+- Improve SEO: use keywords in description
+- Get reviews and ratings
+
+**Issue: Low user engagement**
+Solution:
+- Add better screenshots
+- Improve description
+- Create demo video
+- Share on social media
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## QUICK REFERENCE CHECKLIST
+
+### Before Publishing:
+- [ ] Extension tested on Chess.com
+- [ ] All features working correctly
+- [ ] No console errors
+- [ ] Documentation complete
+- [ ] Screenshots prepared (5+)
+- [ ] Icons ready (128x128 PNG)
+- [ ] Privacy policy written
+- [ ] Version number set (1.0.0)
+- [ ] ZIP package created
+- [ ] Package size < 10MB
+
+### Edge Add-ons Submission:
+- [ ] Partner Center account created
+- [ ] Extension package uploaded
+- [ ] Store listing filled
+- [ ] Screenshots uploaded
+- [ ] Privacy policy added
+- [ ] Submitted for review
+- [ ] Monitoring review status
+
+### Chrome Web Store Submission:
+- [ ] Developer account created ($5 paid)
+- [ ] Extension package uploaded
+- [ ] Store listing completed
+- [ ] Screenshots uploaded (5+)
+- [ ] Privacy practices declared
+- [ ] Submitted for review
+- [ ] Monitoring dashboard
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## ADDITIONAL RESOURCES
+
+### Official Documentation:
+- Chrome Extension Docs: https://developer.chrome.com/docs/extensions/
+- Manifest V3: https://developer.chrome.com/docs/extensions/mv3/intro/
+- Edge Add-ons: https://docs.microsoft.com/microsoft-edge/extensions-chromium/
+- Chrome Web Store: https://developer.chrome.com/docs/webstore/
+
+### Extension Code:
+- GitHub Repository: https://github.com/namansha20/Chess-Assistant
+- Issue Tracker: https://github.com/namansha20/Chess-Assistant/issues
+
+### Testing:
+- See: TESTING.md for comprehensive testing guide
+- See: INSTALL.md for installation details
+- See: QUICKSTART.md for 5-minute setup
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+## VERSION HISTORY
+
+v1.0.0 (December 26, 2025)
+- Initial release
+- Automatic game detection
+- Human coach analysis
+- Pattern detection
+- Game history tracking
+- Privacy-focused design
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+For questions or support:
+GitHub: https://github.com/namansha20/Chess-Assistant
+Issues: https://github.com/namansha20/Chess-Assistant/issues
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Built with ❤️ for chess improvement
+Start analyzing your games today! 🚀♟️

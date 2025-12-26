@@ -1,0 +1,29 @@
+{
+  "name": "chess-assistant",
+  "version": "1.0.0",
+  "description": "Chrome extension that acts as your personal chess coach for Chess.com games",
+  "main": "background.js",
+  "scripts": {
+    "lint": "echo 'Linting JavaScript files...' && node -c content.js && node -c background.js && node -c popup.js && echo 'All files are syntactically valid!'",
+    "validate": "python3 -m json.tool manifest.json > /dev/null && echo 'manifest.json is valid'",
+    "test": "npm run lint && npm run validate"
+  },
+  "keywords": [
+    "chess",
+    "chess.com",
+    "game-analysis",
+    "chrome-extension",
+    "coach",
+    "chess-training"
+  ],
+  "author": "Chess Assistant Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/namansha20/Chess-Assistant.git"
+  },
+  "bugs": {
+    "url": "https://github.com/namansha20/Chess-Assistant/issues"
+  },
+  "homepage": "https://github.com/namansha20/Chess-Assistant#readme"
+}

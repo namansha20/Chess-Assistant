@@ -3,19 +3,32 @@ console.log('Chess Coach: Popup loaded');
 
 let currentAnalysis = null;
 let gameHistory = [];
+let isLoading = false; // Prevent multiple simultaneous loads
 
 // Initialize popup
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('Chess Coach: Popup initialized');
   
-  // Setup event listeners
-  setupEventListeners();
+  // Prevent multiple initializations
+  if (isLoading) {
+    return;
+  }
+  isLoading = true;
   
-  // Load latest analysis
-  await loadLatestAnalysis();
-  
-  // Load game history
-  await loadGameHistory();
+  try {
+    // Setup event listeners
+    setupEventListeners();
+    
+    // Load latest analysis (this is the most important)
+    await loadLatestAnalysis();
+    
+    // Load game history with a small delay to not block UI
+    setTimeout(() => {
+      loadGameHistory();
+    }, 100);
+  } finally {
+    isLoading = false;
+  }
 });
 
 // Setup event listeners
@@ -47,7 +60,11 @@ async function loadLatestAnalysis() {
 // Load game history
 async function loadGameHistory() {
   try {
-    const response = await chrome.runtime.sendMessage({ type: 'GET_GAME_HISTORY' });
+    // Only request history metadata, not full analysis data
+    const response = await chrome.runtime.sendMessage({ 
+      type: 'GET_GAME_HISTORY',
+      limit: 10 // Only load last 10 games initially
+    });
     
     if (response.success) {
       gameHistory = response.history || [];
@@ -274,13 +291,17 @@ function displayHistory() {
   
   let html = '<h3 style="margin: 15px 0 10px 0;">Recent Games</h3>';
   
-  gameHistory.slice(0, 10).forEach((game, index) => {
+  // Only show first 10 games to reduce rendering load
+  const displayLimit = Math.min(10, gameHistory.length);
+  
+  for (let i = 0; i < displayLimit; i++) {
+    const game = gameHistory[i];
     const date = new Date(game.timestamp).toLocaleDateString();
     const resultClass = game.result === 'win' ? 'win' : game.result === 'loss' ? 'loss' : 'draw';
     const resultText = game.result.charAt(0).toUpperCase() + game.result.slice(1);
     
     html += `
-      <div class="history-item" data-index="${index}">
+      <div class="history-item" data-index="${i}">
         <div class="history-date">${date} - ${game.timeControl}</div>
         <div class="history-result ${resultClass}">${resultText} as ${game.playerColor}</div>
         <div style="font-size: 12px; color: #666; margin-top: 5px;">
@@ -288,7 +309,7 @@ function displayHistory() {
         </div>
       </div>
     `;
-  });
+  }
   
   container.innerHTML = html;
   
@@ -342,6 +363,11 @@ function hideStatus() {
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // Only process if document is visible (popup is open)
+  if (document.hidden) {
+    return;
+  }
+  
   if (request.type === 'NEW_ANALYSIS_AVAILABLE') {
     loadLatestAnalysis();
   }

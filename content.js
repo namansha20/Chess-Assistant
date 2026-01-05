@@ -34,30 +34,56 @@ function setupGameObserver() {
     gameObserver.disconnect();
   }
   
+  // Debounce the check to avoid excessive calls
+  let checkTimeout = null;
+  const debouncedCheck = () => {
+    if (checkTimeout) {
+      clearTimeout(checkTimeout);
+    }
+    checkTimeout = setTimeout(() => {
+      checkGameEnd();
+      checkTimeout = null;
+    }, 500); // Wait 500ms after last mutation
+  };
+  
   // Create mutation observer to watch for game end
-  gameObserver = new MutationObserver((mutations) => {
-    checkGameEnd();
-  });
+  gameObserver = new MutationObserver(debouncedCheck);
   
-  // Observe the entire document for changes
-  gameObserver.observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ['class']
-  });
+  // Observe only the game container area, not entire document
+  // Look for the main game container first
+  const gameContainer = document.querySelector('.board-layout-main, #board-layout-main, .main-board-component');
   
-  // Also check periodically
-  setInterval(checkGameEnd, 3000);
+  if (gameContainer) {
+    gameObserver.observe(gameContainer, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'data-cy'] // Only watch relevant attributes
+    });
+  } else {
+    // If game container not found, observe modal areas only (game-over dialogs appear here)
+    const modalContainer = document.querySelector('#modal-container, .modal-container, body > div[role="dialog"]') || document.body;
+    gameObserver.observe(modalContainer, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'data-cy']
+    });
+  }
+  
+  // Single periodic check as backup (less frequent)
+  setInterval(checkGameEnd, 10000); // Every 10 seconds instead of 3
 }
 
 // Check if game has ended
 function checkGameEnd() {
-  // Look for game over indicators
-  const gameOverElement = document.querySelector('.game-over-modal-content') ||
-                         document.querySelector('[data-cy="game-over-modal"]') ||
-                         document.querySelector('.modal-game-over-content-container') ||
-                         document.querySelector('.game-over-header-component');
+  // Early return if we're not on a game page
+  if (!isGamePage()) {
+    return;
+  }
+  
+  // Look for game over indicators (optimized selector)
+  const gameOverElement = document.querySelector('.game-over-modal-content, [data-cy="game-over-modal"], .modal-game-over-content-container, .game-over-header-component');
   
   if (gameOverElement) {
     console.log('Chess Coach: Game over detected!');
@@ -284,7 +310,14 @@ function getCurrentFEN() {
 function constructFENFromBoard() {
   try {
     const pieces = document.querySelectorAll('.piece');
+    
+    // Early exit if no pieces found
+    if (pieces.length === 0) {
+      return null;
+    }
+    
     const board = Array(8).fill(null).map(() => Array(8).fill(''));
+    let validPieceCount = 0;
     
     pieces.forEach(piece => {
       const classes = piece.className;
@@ -296,8 +329,7 @@ function constructFENFromBoard() {
         
         // Validate indices are within bounds
         if (file < 0 || file > 7 || rank < 0 || rank > 7) {
-          console.warn('Chess Coach: Invalid board coordinates', file, rank);
-          return;
+          return; // Skip invalid positions
         }
         
         // Extract piece type and color
@@ -306,9 +338,15 @@ function constructFENFromBoard() {
           const color = pieceMatch[1];
           const type = pieceMatch[2];
           board[rank][file] = color + type;
+          validPieceCount++;
         }
       }
     });
+    
+    // If we didn't find enough pieces, something went wrong
+    if (validPieceCount < 8) {
+      return null;
+    }
     
     // Convert board array to FEN notation
     let fen = '';

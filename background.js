@@ -118,7 +118,7 @@ function parsePGN(pgn) {
   const moveRegex = /\d+\.\s*([a-hNBRQKO0-8x=+#-]+)\s*([a-hNBRQKO0-8x=+#-]+)?/g;
   let match;
   let matchCount = 0;
-  const maxMoves = 200; // Safety limit to prevent infinite loops
+  const maxMoves = 500; // Safety limit to prevent infinite loops (increased for long classical games)
   
   while ((match = moveRegex.exec(moveText)) !== null && matchCount < maxMoves) {
     if (match[1]) moves.push({ move: match[1], color: 'white' });
@@ -133,8 +133,8 @@ function parsePGN(pgn) {
 function analyzeMoves(moves, playerColor) {
   const analysis = [];
   
-  // Limit analysis to reasonable number of moves
-  const maxMovesToAnalyze = 100;
+  // Limit analysis to reasonable number of moves (increased for longer games)
+  const maxMovesToAnalyze = 250;
   const movesToProcess = moves.slice(0, maxMovesToAnalyze);
   
   movesToProcess.forEach((moveData, index) => {

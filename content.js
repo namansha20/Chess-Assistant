@@ -51,14 +51,25 @@ function setupGameObserver() {
   
   // Observe only the game container area, not entire document
   // Look for the main game container first
-  const gameContainer = document.querySelector('.board-layout-main, #board-layout-main, .main-board-component') || document.body;
+  const gameContainer = document.querySelector('.board-layout-main, #board-layout-main, .main-board-component');
   
-  gameObserver.observe(gameContainer, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ['class', 'data-cy'] // Only watch relevant attributes
-  });
+  if (gameContainer) {
+    gameObserver.observe(gameContainer, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'data-cy'] // Only watch relevant attributes
+    });
+  } else {
+    // If game container not found, observe modal areas only (game-over dialogs appear here)
+    const modalContainer = document.querySelector('#modal-container, .modal-container, body > div[role="dialog"]') || document.body;
+    gameObserver.observe(modalContainer, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'data-cy']
+    });
+  }
   
   // Single periodic check as backup (less frequent)
   setInterval(checkGameEnd, 10000); // Every 10 seconds instead of 3

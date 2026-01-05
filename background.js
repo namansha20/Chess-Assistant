@@ -29,7 +29,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   if (request.type === 'GET_GAME_HISTORY') {
-    getGameHistory()
+    getGameHistory(request.limit)
       .then(history => {
         sendResponse({ success: true, history });
       })
@@ -274,8 +274,8 @@ function identifyKeyMoments(moveAnalysis, playerColor) {
 async function analyzePatterns(moveAnalysis) {
   const patterns = [];
   
-  // Get historical games
-  const history = await getGameHistory();
+  // Get historical games (limited to recent 20 for performance)
+  const history = await getGameHistory(20);
   
   // Pattern: Early queen development
   const earlyQueenMoves = moveAnalysis.filter(m => 
@@ -523,13 +523,16 @@ async function getLatestAnalysis() {
 }
 
 // Get game history
-async function getGameHistory() {
+async function getGameHistory(limit = null) {
   return new Promise((resolve, reject) => {
     chrome.storage.local.get(['games'], (result) => {
       if (chrome.runtime.lastError) {
         reject(chrome.runtime.lastError);
       } else {
-        resolve(result.games || []);
+        const games = result.games || [];
+        // Apply limit if specified
+        const limitedGames = limit ? games.slice(0, limit) : games;
+        resolve(limitedGames);
       }
     });
   });

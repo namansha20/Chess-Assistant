@@ -363,6 +363,11 @@ function hideStatus() {
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // Only process if document is visible (popup is open)
+  if (document.hidden) {
+    return;
+  }
+  
   if (request.type === 'NEW_ANALYSIS_AVAILABLE') {
     loadLatestAnalysis();
   }

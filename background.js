@@ -101,16 +101,29 @@ async function analyzeGame(gameData) {
 function parsePGN(pgn) {
   const moves = [];
   
+  // Early return if PGN is invalid or empty
+  if (!pgn || typeof pgn !== 'string' || pgn.trim().length === 0) {
+    return moves;
+  }
+  
   // Remove headers and get move text
   const moveText = pgn.split('\n').filter(line => !line.startsWith('[')).join(' ');
+  
+  // Early exit if no move text
+  if (moveText.trim().length === 0) {
+    return moves;
+  }
   
   // Extract moves (remove move numbers and annotations)
   const moveRegex = /\d+\.\s*([a-hNBRQKO0-8x=+#-]+)\s*([a-hNBRQKO0-8x=+#-]+)?/g;
   let match;
+  let matchCount = 0;
+  const maxMoves = 200; // Safety limit to prevent infinite loops
   
-  while ((match = moveRegex.exec(moveText)) !== null) {
+  while ((match = moveRegex.exec(moveText)) !== null && matchCount < maxMoves) {
     if (match[1]) moves.push({ move: match[1], color: 'white' });
     if (match[2]) moves.push({ move: match[2], color: 'black' });
+    matchCount++;
   }
   
   return moves;
@@ -120,13 +133,17 @@ function parsePGN(pgn) {
 function analyzeMoves(moves, playerColor) {
   const analysis = [];
   
-  moves.forEach((moveData, index) => {
+  // Limit analysis to reasonable number of moves
+  const maxMovesToAnalyze = 100;
+  const movesToProcess = moves.slice(0, maxMovesToAnalyze);
+  
+  movesToProcess.forEach((moveData, index) => {
     if (moveData.color !== playerColor) {
       return; // Only analyze player's moves
     }
     
     const moveNum = Math.floor(index / 2) + 1;
-    const quality = evaluateMoveQuality(moveData.move, index, moves);
+    const quality = evaluateMoveQuality(moveData.move, index, movesToProcess);
     
     analysis.push({
       moveNumber: moveNum,
@@ -482,17 +499,27 @@ async function storeAnalysis(gameData, analysis) {
     chrome.storage.local.get(['games', 'latestAnalysis'], (result) => {
       const games = result.games || [];
       
-      // Add new game
+      // Create a lightweight copy without redundant data to save memory
       const gameRecord = {
-        ...gameData,
-        analysis,
-        timestamp: Date.now()
+        pgn: gameData.pgn,
+        playerColor: gameData.playerColor,
+        timeControl: gameData.timeControl,
+        result: gameData.result,
+        timestamp: gameData.timestamp,
+        analysis: {
+          // Only store essential analysis data
+          keyMoments: analysis.keyMoments,
+          patterns: analysis.patterns,
+          summary: analysis.summary,
+          focusAreas: analysis.focusAreas
+          // Skip storing full moveAnalysis to save space
+        }
       };
       
       games.unshift(gameRecord); // Add to beginning
       
-      // Keep only last 50 games
-      const trimmedGames = games.slice(0, 50);
+      // Keep only last 30 games to reduce memory usage (was 50)
+      const trimmedGames = games.slice(0, 30);
       
       // Store updated games and latest analysis
       chrome.storage.local.set({
